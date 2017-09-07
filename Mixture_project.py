@@ -21,13 +21,15 @@ p_FR_lethal  = 0.80                             # probability that a framework (
 p_FR_silent  = 0.                               # probability that a FR mutation is silent
 p_FR_affect  = 1. - p_FR_lethal - p_FR_silent   # probability that a FR mutation affects affinity
 
-nb_Ag        = 10              # number of antigens
+nb_Ag        = 10              # number of antigens 
+"""TO CHANGE"""
+
 conc         = 1.30            # antigen concentration
 energy_scale = 0.05            # inverse temperature
 E0           = 6.00            # mean binding energy for mixing with flexibility
 maxQ 		 = 1			   # max value for Q
-minQ 		 = 1  		   # min value for Q
-sigmaQ       = 0            # standard deviation for changes in flexibility with FR mutation
+minQ 		 = 1		       # min value for Q
+sigmaQ       = 0.00            # standard deviation for changes in flexibility with FR mutation
 help_cutoff  = 0.70            # only B cells in the top (help_cutoff) fraction of binders receive T cell help
 p_recycle    = 0.75            # probability that a B cell is recycled
 p_exit       = 1. - p_recycle  # probability that a B cell exits the GC
