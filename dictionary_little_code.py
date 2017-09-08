@@ -1,8 +1,9 @@
 #dictionary for Mixture project
+import csv
 
  ####### parameters #######
 time_Steps = [2, 61, 121, 181, 241]
-cocktailFirst = 1
+cocktailFirst = 
 l = 12 #number of residues, 3 conserved, 9 variable
 
  ####### antigens creation ####### 
@@ -26,11 +27,29 @@ if cocktailFirst==1:
 	dicAgs.update({c:Seq_Ag1 for c in list(range(time_Steps[2]+1,time_Steps[3]))})
 	dicAgs.update({c:Seq_Ag2 for c in list(range(time_Steps[3]+1,time_Steps[4]))})
 
+	with open('output_cocktailDict.csv', 'w') as output:
+	    w = csv.writer(output)
+	    w.writerows(dicAgs.items())
+	    #for k in sorted(dicAgs):
+	    #   w.writerow([k] + dicAgs[k])
+else:
+	Coc_cycles = list(range(time_Steps[3]+1,time_Steps[4]))
+	dicCocktail = {c: Cocktail for c in Coc_cycles}
+	dicAgs = {c:Seq_Ag0 for c in list(range(time_Steps[0],time_Steps[1]))}
+	dicAgs.update({c:Seq_Ag1 for c in list(range(time_Steps[1]+1,time_Steps[2]))})
+	dicAgs.update({c:Seq_Ag2 for c in list(range(time_Steps[2]+1,time_Steps[3]))})
+	dicAgs.update(dicCocktail)
+	
+	with open('output_sequenceDict.csv', 'w') as output:
+	    w = csv.writer(output)
+	    w.writerows(dicAgs.items())
+	
 
-"""Seq_cycles = list(range(time_Steps[2]+1,time_Steps[4])) 
-Sequence = [Seq_Ag0, Seq_Ag1, Seq_Ag2] 
 
-dicCocktail = {c: Cocktail for c in Coc_cycles}
-dicSequence = {c: Sequence for c in Seq_cycles}
-dicAntigens = dicCocktail.copy()
-dicAntigens.update(dicSequence)"""
+#Seq_cycles = list(range(time_Steps[2]+1,time_Steps[4])) 
+#Sequence = [Seq_Ag0, Seq_Ag1, Seq_Ag2] 
+
+#dicCocktail = {c: Cocktail for c in Coc_cycles}
+#dicSequence = {c: Sequence for c in Seq_cycles}
+#dicAntigens = dicCocktail.copy()
+#dicAntigens.update(dicSequence)
