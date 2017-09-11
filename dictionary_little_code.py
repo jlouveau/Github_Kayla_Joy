@@ -3,7 +3,7 @@ import csv
 
  ####### parameters #######
 time_Steps = [2, 61, 121, 181, 241]
-cocktailFirst = 
+cocktailFirst = 1
 l = 12 #number of residues, 3 conserved, 9 variable
 
  ####### antigens creation ####### 
@@ -43,7 +43,19 @@ else:
 	with open('output_sequenceDict.csv', 'w') as output:
 	    w = csv.writer(output)
 	    w.writerows(dicAgs.items())
-	
+
+# determine number of Ags at cycle = index
+index = 20
+if len(dicAgs[index]) == l:
+	print ('1 antigen')
+else:
+	print (str(len(dicAgs[index])) + ' antigens')
+
+#a = [1,2,3,4]
+#b = [2,3,4,5]
+
+#c = [x*y for x,y in zip(a,b)]
+#s = sum([x*y for x,y in zip(a,b)])
 
 
 #Seq_cycles = list(range(time_Steps[2]+1,time_Steps[4])) 

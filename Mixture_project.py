@@ -21,8 +21,12 @@ p_FR_lethal  = 0.80                             # probability that a framework (
 p_FR_silent  = 0.                               # probability that a FR mutation is silent
 p_FR_affect  = 1. - p_FR_lethal - p_FR_silent   # probability that a FR mutation affects affinity
 
-nb_Ag        = 10              # number of antigens 
-"""TO CHANGE"""
+#####TO CHANGE####
+length       = 12
+#keep p_var or switch to length?
+#nb_Ag will have to depend on the cycle
+#nb_Ag        = 10              # number of antigens 
+
 
 conc         = 1.30            # antigen concentration
 energy_scale = 0.05            # inverse temperature
@@ -41,8 +45,8 @@ o      =  3.0   # lognormal offset
 mumat  = mu * np.ones(nb_Ag)
 sigmat = sigma * np.diag(np.ones(nb_Ag))
 
-for i in range(nb_Ag):
-    for j in range(i+1,nb_Ag):
+for i in range(length):
+    for j in range(i+1,length):
         sigmat[i,j] = sigma * corr
         sigmat[j,i] = sigma * corr
 
@@ -54,7 +58,7 @@ class BCell:
     def __init__(self, nb = 512, **kwargs):
         """ Initialize clone-specific variables. 
             nb          - population size
-            b           - array of the values for each residue of the B cell 
+            res         - array of the values for each residue of the B cell 
             Q           - overlap parameter, proxy for rigidity (most 0 ---> 1 least flexible)
             nb_FR_mut   - number of accumulated FR mutations
             nb_CDR_mut  - number of accumulated CDR mutations
@@ -64,20 +68,24 @@ class BCell:
         
         self.nb = nb    # default starting population size = 512 (9 rounds of division)
         
-        if ('Ev' in kwargs) and ('Ec' in kwargs):
-            self.Ev = np.array(kwargs['Ev'])
+        if ('res' in kwargs) and ('Ec' in kwargs):
+            self.b = np.array(kwargs['res'])
             self.Ec = kwargs['Ec']
         
         else:
-            self.Ev = np.zeros(nb_Ag)
+            self.res = np.zeros(length)
             self.Ec = 0
 
-            self.Ev     = o - np.exp(np.random.multivariate_normal(mumat, sigmat))
+            self.res   = o - np.exp(np.random.multivariate_normal(mumat, sigmat))
+            ### CHANGES NEEDED
             #selected_Ag = np.random.randint(nb_Ag)
-            selected_Ag = np.argmax(self.Ev)
+            selected_Ag = np.argmax(self.res)
             
-            if self.Ev[selected_Ag]<0 and np.max(self.Ev)<0:
-                self.Ev[selected_Ag] = 0
+            if self.res[selected_Ag]<0 and np.max(self.res)<0:
+                self.res[selected_Ag] = 0
+			#####				#####
+			
+			####assuming last_bound is the list of residues of the antigen last bound
             
         if 'Q' in kwargs: self.Q = kwargs['Q']
         else:             self.Q = maxQ
@@ -100,7 +108,7 @@ class BCell:
     """ Return a new copy of the input BCell"""
     @classmethod
     def clone(cls, b):
-        return cls(1, Ev = deepcopy(b.Ev), Ec = b.Ec, Q = b.Q, generation = b.generation, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
+        return cls(1, res = deepcopy(b.res), Ec = b.Ec, Q = b.Q, generation = b.generation, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
     
     def update_history(self):
         """ Add current parameters to the history list. """
@@ -110,24 +118,27 @@ class BCell:
         self.history['nb_FR_mut'].append(self.nb_FR_mut)
         self.history['nb_CDR_mut'].append(self.nb_CDR_mut)
     
+    def energy(self, Ag):
+		""" Return binding energy with input antigen. """			
+		return sum([x*y for x,y in zip(self.res,Ag)])
+		
     def bind_to(self, Ag):
-        """ Return binding energy with input antigen. """
-        return (self.Q * (self.Ec + self.Ev[Ag]) + (maxQ - self.Q) * E0)
+        """ Return binding energy with input antigen with flexibility. """
+        return (self.Q * energy(self,Ag) + (maxQ - self.Q) * E0)
 
     def divide(self):
         """ Run one round of division. """
         self.nb *= 2
         self.generation += 1
     
-    def mutate_CDR(self): ### MUTATION CHANGE DEPENDS ON THE ANTIGEN RESIDUE
+    def mutate_CDR(self, Ag): ### MUTATION CHANGE DEPENDS ON THE ANTIGEN RESIDUE
         """ Change in energy due to affinity-affecting CDR mutation. """
         if np.random.rand()<p_var:
             self.Ev += o - np.exp(np.random.multivariate_normal(mumat, sigmat))
         else:
             self.Ec += o - np.exp(np.random.normal(mu, sigma))
         self.nb_CDR_mut += 1
-        self.update_history()
-        
+        self.update_history()        
 
     def mutate_FR(self):
         """ Change in flexibility due to affinity-affecting framework (FR) mutation. """
@@ -308,8 +319,9 @@ def run_dark_zone(B_cells, nb_rounds = 2):
     return B_cells
 
 
-def run_binding_selection(B_cells):
+def run_binding_selection(B_cells, antigens):
     """ Select B cells for binding to antigen. """
+    nb_Ag = len(antigens)
     
     for b in B_cells:
         
