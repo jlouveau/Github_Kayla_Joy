@@ -45,11 +45,11 @@ else:
 	    w.writerows(dicAgs.items())
 
 # determine number of Ags at cycle = index
-index = 20
-if len(dicAgs[index]) == l:
-	print ('1 antigen')
-else:
-	print (str(len(dicAgs[index])) + ' antigens')
+#index = 20
+#if len(dicAgs[index]) == l:
+	#print ('1 antigen')
+#else:
+	#print (str(len(dicAgs[index])) + ' antigens')
 
 #a = [1,2,3,4]
 #b = [2,3,4,5]

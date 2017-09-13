@@ -2,6 +2,7 @@
 # available at: https://github.com/jlouveau/Toy_Model_for_John
 
 import sys
+import os
 import numpy as np                          # numerical tools
 from copy import deepcopy                   # deepcopy copies a data structure without any implicit references
 from scipy.stats import genextreme          # generalized extreme value distribution
@@ -23,6 +24,7 @@ p_FR_affect  = 1. - p_FR_lethal - p_FR_silent   # probability that a FR mutation
 
 #####TO CHANGE####
 length       = 12
+epsilon      = 1e-16
 #keep p_var or switch to length?
 #nb_Ag will have to depend on the cycle
 #nb_Ag        = 10              # number of antigens 
@@ -30,9 +32,9 @@ length       = 12
 
 conc         = 1.30            # antigen concentration
 energy_scale = 0.05            # inverse temperature
-E0           = 6.00            # mean binding energy for mixing with flexibility
-maxQ 		 = 1			   # max value for Q
-minQ 		 = 1		       # min value for Q
+E0           = 3.00            # mean binding energy for mixing with flexibility
+maxQ          = 1               # max value for Q
+minQ          = 1               # min value for Q
 sigmaQ       = 0.00            # standard deviation for changes in flexibility with FR mutation
 help_cutoff  = 0.70            # only B cells in the top (help_cutoff) fraction of binders receive T cell help
 p_recycle    = 0.75            # probability that a B cell is recycled
@@ -42,13 +44,13 @@ mu     =  1.9   # lognormal mean
 sigma  =  0.5   # lognormal standard deviation
 corr   =  0.0   # correlation between antigen variable regions
 o      =  3.0   # lognormal offset
-mumat  = mu * np.ones(nb_Ag)
-sigmat = sigma * np.diag(np.ones(nb_Ag))
+mumat  = mu * np.ones(length)
+sigmat = sigma * np.diag(np.ones(length))
 
-for i in range(length):
-    for j in range(i+1,length):
-        sigmat[i,j] = sigma * corr
-        sigmat[j,i] = sigma * corr
+#for i in range(length):
+    #for j in range(i+1,length):
+        #sigmat[i,j] = sigma * corr
+        #sigmat[j,i] = sigma * corr
 
 
 ###### B cell clone class ######
@@ -59,34 +61,32 @@ class BCell:
         """ Initialize clone-specific variables. 
             nb          - population size
             res         - array of the values for each residue of the B cell 
+            E           - total binding energy
             Q           - overlap parameter, proxy for rigidity (most 0 ---> 1 least flexible)
             nb_FR_mut   - number of accumulated FR mutations
             nb_CDR_mut  - number of accumulated CDR mutations
+            antigens    - list of antigens
+            nb_Ag       - number of antigens available
             last_bound  - number of individuals that last bound each Ag 
             generation  - generation in the GC reaction
             history     - history of mutations, generation occurred, and effect on Q/Ec """
         
         self.nb = nb    # default starting population size = 512 (9 rounds of division)
         
-        if ('res' in kwargs) and ('Ec' in kwargs):
-            self.b = np.array(kwargs['res'])
-            self.Ec = kwargs['Ec']
-        
+        if ('res' in kwargs) and ('E' in kwargs):
+            self.res         = np.array(kwargs['res'])
+            self.E         = kwargs['E']       
         else:
-            self.res = np.zeros(length)
-            self.Ec = 0
-
-            self.res   = o - np.exp(np.random.multivariate_normal(mumat, sigmat))
-            ### CHANGES NEEDED
-            #selected_Ag = np.random.randint(nb_Ag)
-            selected_Ag = np.argmax(self.res)
+            self.res = -np.random.dirichlet(np.ones(length)) + 1/length + epsilon #sum to >0
+            self.E = sum(self.res) #assuming that the initializing Ag equals ones(length)
+        
+        if 'antigens' in kwargs: self.antigens = np.array(kwargs['antigens'])
+        else:                    self.antigens = np.ones(length)
             
-            if self.res[selected_Ag]<0 and np.max(self.res)<0:
-                self.res[selected_Ag] = 0
-			#####				#####
-			
-			####assuming last_bound is the list of residues of the antigen last bound
-            
+        if 'nb_Ag' in kwargs:              self.nb_Ag = kwargs['nb_Ag']
+        elif len(self.antigens) == length: self.nb_Ag = 1
+        else:                              self.nb_Ag = len(self.antigens)
+                      
         if 'Q' in kwargs: self.Q = kwargs['Q']
         else:             self.Q = maxQ
 
@@ -97,46 +97,60 @@ class BCell:
         else:                  self.nb_CDR_mut = 0
         
         if 'last_bound' in kwargs: self.last_bound = kwargs['last_bound']
-        else:                      self.last_bound = np.random.multinomial(self.nb, pvals = [1/float(nb_Ag)] * nb_Ag)
+        else:                      self.last_bound = np.random.multinomial(self.nb, pvals = [1/float(self.nb_Ag)] * self.nb_Ag)
         
         if 'generation' in kwargs: self.generation = kwargs['generation']
         else:                  self.generation = 0
            
         if 'history' in kwargs: self.history = kwargs['history']
-        else:                   self.history = {'generation' : [self.generation], 'nb_FR_mut' : [self.nb_FR_mut], 'nb_CDR_mut' : [self.nb_CDR_mut], 'Q' : [self.Q], 'Ec' : [self.Ec]}
+        else:                   self.history = {'generation' : [self.generation], 'nb_FR_mut' : [self.nb_FR_mut], 'nb_CDR_mut' : [self.nb_CDR_mut], 'Q' : [self.Q], 'E' : [self.E]}
 
     """ Return a new copy of the input BCell"""
     @classmethod
     def clone(cls, b):
-        return cls(1, res = deepcopy(b.res), Ec = b.Ec, Q = b.Q, generation = b.generation, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
-    
+        return cls(1, res = deepcopy(b.res), antigens = deepcopy(b.antigens), nb_Ag = b.nb_Ag, E = b.E, Q = b.Q, generation = b.generation, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
+        
+            
     def update_history(self):
         """ Add current parameters to the history list. """
         self.history['Q'].append(self.Q)
-        self.history['Ec'].append(self.Ec)
+        self.history['E'].append(self.E)
         self.history['generation'].append(self.generation)
         self.history['nb_FR_mut'].append(self.nb_FR_mut)
         self.history['nb_CDR_mut'].append(self.nb_CDR_mut)
     
     def energy(self, Ag):
-		""" Return binding energy with input antigen. """			
-		return sum([x*y for x,y in zip(self.res,Ag)])
-		
+        """ Return binding energy with input antigen. """            
+        return sum([x*y for x,y in zip(self.res, Ag)])
+        
     def bind_to(self, Ag):
         """ Return binding energy with input antigen with flexibility. """
-        return (self.Q * energy(self,Ag) + (maxQ - self.Q) * E0)
+        self.E = self.Q * self.energy(Ag) + (maxQ - self.Q) * E0
+        return self.E
 
     def divide(self):
         """ Run one round of division. """
         self.nb *= 2
         self.generation += 1
+
+    def pick_Antigen(self):
+        """ Return one antigen. """
+        return self.antigens[np.random.randint(self.nb_Ag)]
+        
+    def update_antigens(self, newAntigens):
+        self.antigens = deepcopy(newAntigens)
+        if len(newAntigens) == length: self.nb_Ag = 1
+        else:                          self.nb_Ag = len(newAntigens)
     
-    def mutate_CDR(self, Ag): ### MUTATION CHANGE DEPENDS ON THE ANTIGEN RESIDUE
-        """ Change in energy due to affinity-affecting CDR mutation. """
-        if np.random.rand()<p_var:
-            self.Ev += o - np.exp(np.random.multivariate_normal(mumat, sigmat))
-        else:
-            self.Ec += o - np.exp(np.random.normal(mu, sigma))
+    def mutate_CDR(self, Ag): ### change parameter of log normal for variable and conserved residues
+        """ Change in energy due to affinity-affecting CDR mutation. Only one residue mutates."""
+        index = np.random.randint(0, length) #randomly chosen residue to be mutated
+        
+        if np.random.rand()<p_var*length: #mutation of b cell residue that binds to variable residue
+            self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
+        else: #mutation in conserved-binding residue
+            self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
+            #could add some rules if change affects conserved residue
         self.nb_CDR_mut += 1
         self.update_history()        
 
@@ -170,7 +184,8 @@ class BCell:
         self.nb                   += n_silent #add silent mutations to the parent clone
         for i in range(n_affect):
             b = BCell.clone(self)
-            b.mutate_CDR()
+            Ag = b.pick_Antigen()
+            b.mutate_CDR(Ag)
             new_clones.append(b)
         
         # process FR mutations
@@ -207,10 +222,15 @@ def main(verbose=False):
     fbig = open('output-largest-clone.csv', 'w')
     
     #fgc.write( 'trial,exit cycle,number,mutations,Ec,'+(','.join(['Ev'+str(i) for i in range(nb_Ag)]))+'\n')
-    fmem.write('trial,exit cycle,number,generation,FR_mutations,CDR_mutations,Q,Ec,'+(','.join(['Ev'+str(i) for i in range(nb_Ag)]))+'\n')
+    fmem.write('trial,exit cycle,number,generation,FR_mutations,CDR_mutations,Q,E\n')
     ftot.write('trial,cycle,number recycled,number exit\n')
-    fbig.write('trial,exit cycle,Q,Ec,generation,FR_mutations,CDR_mutations\n')
+    fbig.write('trial,exit cycle,Q,E,generation,FR_mutations,CDR_mutations\n')
     
+    # Upload dictionary of antigens
+    from dictionary_little_code import dicAgs
+    print ('imported dictionary!')
+    
+    # Events of a trial
     for t in range(nb_trial):
     
         print_update(t, nb_trial)   # status check
@@ -243,7 +263,8 @@ def main(verbose=False):
         
         for cycle_number in range(2, nb_cycle_max):
         
-            B_cells, out_cells = run_GC_cycle(B_cells)
+            cycleAntigens = dicAgs[cycle_number]
+            B_cells, out_cells = run_GC_cycle(B_cells, cycleAntigens)
             GC_size            = np.sum([b.nb for b in B_cells])       # total number of cells in the GC
             
             if (cycle_number==nb_cycle_max-1) or (GC_size>GC_size_max): # at the end, all B cells exit the GC
@@ -270,8 +291,7 @@ def main(verbose=False):
         for i in range(len(exit_cells)):
             for b in exit_cells[i]:
                 if b.nb>100:
-                    fmem.write('%d,%d,%d,%d,%d,%d,%lf,%lf' % (t, i+2, b.nb, b.generation, b.nb_FR_mut, b.nb_CDR_mut, b.Q, b.Ec))
-                    for j in range(nb_Ag): fmem.write(',%lf' % b.Ev[j])
+                    fmem.write('%d,%d,%d,%d,%d,%d,%lf,%lf' % (t, i+2, b.nb, b.generation, b.nb_FR_mut, b.nb_CDR_mut, b.Q, b.E))
                     fmem.write('\n')
         fmem.flush()
 
@@ -282,7 +302,7 @@ def main(verbose=False):
             idx = np.argmax([b.nb for b in exit_cells[-1]])
             b   = exit_cells[-1][idx]
             for i in range(len(b.history['Q'])):
-                fbig.write('%d,%d,%lf,%lf,%d,%d,%d\n' % (t, len(exit_cells)-1, b.history['Q'][i], b.history['Ec'][i], b.history['generation'][i], b.history['nb_FR_mut'][i], b.history['nb_CDR_mut'][i]))
+                fbig.write('%d,%d,%lf,%lf,%d,%d,%d\n' % (t, len(exit_cells)-1, b.history['Q'][i], b.history['E'][i], b.history['generation'][i], b.history['nb_FR_mut'][i], b.history['nb_CDR_mut'][i]))
         fbig.flush()
 
     # End and output total time
@@ -306,7 +326,14 @@ def print_update(current, end, bar_length=20):
     sys.stdout.write("\rSimulating: [{0}] {1}%".format(dash + space, int(round(percent * 100))))
     sys.stdout.flush()
 
-
+def updating_antigens(B_cells, cycleAntigens):
+    """ The antigens for all B cells are updated with the beginning of a new cycle. """
+    for b in B_cells:
+        b.update_antigens(cycleAntigens)
+    
+    #print (B_cells[0].antigens)
+    return B_cells
+    
 def run_dark_zone(B_cells, nb_rounds = 2):
     """ B cells proliferate and undergo SHM in the dark zone. """
     
@@ -319,18 +346,17 @@ def run_dark_zone(B_cells, nb_rounds = 2):
     return B_cells
 
 
-def run_binding_selection(B_cells, antigens):
+def run_binding_selection(B_cells):
     """ Select B cells for binding to antigen. """
-    nb_Ag = len(antigens)
     
     for b in B_cells:
+
+        b.last_bound = np.random.multinomial(b.nb, pvals = [1./float(b.nb_Ag)] * b.nb_Ag)
         
-        b.last_bound = np.random.multinomial(b.nb, pvals = [1./float(nb_Ag)] * nb_Ag)
-        
-        for i in range(nb_Ag):
+        for i in range(b.nb_Ag):
             
             # compute binding energy and chance of death ( = 1 - chance of survival )
-            Ag_bound      = np.exp(energy_scale * b.bind_to(i))
+            Ag_bound      = np.exp(energy_scale * b.bind_to(b.antigens[i]))
             factor        = conc * Ag_bound
             langmuir_conj = 1. / (1. + factor)
             
@@ -347,9 +373,10 @@ def run_binding_selection(B_cells, antigens):
 
 def run_help_selection(B_cells):
     """ Select B cells to receive T cell help. """
+    nb_Ag = B_cells[0].nb_Ag
     
     # get binding energies
-    binding_energy     = [[b.bind_to(i) for i in range(nb_Ag)] for b in B_cells]
+    binding_energy     = [[b.bind_to(b.antigens[i]) for i in range(nb_Ag)] for b in B_cells]
     binding_energy_tot = []
     for i in range(len(B_cells)):
         for j in range(nb_Ag): binding_energy_tot += [binding_energy[i][j]] * B_cells[i].last_bound[j]
@@ -409,25 +436,11 @@ def run_recycle(B_cells):
 
     return new_cells, exit_cells
 
-    # STOCHASTIC RECYCLING
-#    for b in B_cells:
-#        
-#        n_exit  = np.random.binomial(b.nb, p_exit)
-#        b.nb   -= n_exit
-#        
-#        if (b.nb>0):
-#            new_cells.append(b)
-#        
-#        if (n_exit>0):
-#            exit_cells.append(deepcopy(b))
-#            exit_cells[-1].nb = n_exit
-#
-#    return new_cells, exit_cells
 
-
-def run_GC_cycle(B_cells):
+def run_GC_cycle(B_cells, cycleAntigens):
     """ Run one cycle of the GC reaction. """
-
+    
+    B_cells = updating_antigens(B_cells, cycleAntigens) # UPDATE antigens
     B_cells = run_dark_zone(B_cells)    # DARK  ZONE - two rounds of division + SHM
     run_binding_selection(B_cells)      # LIGHT ZONE - selection for binding to Ag
     run_help_selection(B_cells)         # LIGHT ZONE - selection to receive T cell help
