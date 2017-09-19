@@ -30,14 +30,14 @@ epsilon      = 1e-16
 #nb_Ag        = 10              # number of antigens 
 
 
-conc         = 1.30            # antigen concentration
-energy_scale = 0.05            # inverse temperature
+conc         = 1.15            # antigen concentration
+energy_scale = 0.045            # inverse temperature
 E0           = 3.00            # mean binding energy for mixing with flexibility
 maxQ          = 1               # max value for Q
 minQ          = 1               # min value for Q
 sigmaQ       = 0.00            # standard deviation for changes in flexibility with FR mutation
 help_cutoff  = 0.70            # only B cells in the top (help_cutoff) fraction of binders receive T cell help
-p_recycle    = 0.75            # probability that a B cell is recycled
+p_recycle    = 0.70            # probability that a B cell is recycled
 p_exit       = 1. - p_recycle  # probability that a B cell exits the GC
 
 mu     =  1.9   # lognormal mean
@@ -79,12 +79,13 @@ class BCell:
         else:
             self.res = -np.random.dirichlet(np.ones(length)) + 1/length + epsilon #sum to >0
             self.E = sum(self.res) #assuming that the initializing Ag equals ones(length)
+            if self.E < 0: print('error initialization of E')
         
         if 'antigens' in kwargs: self.antigens = np.array(kwargs['antigens'])
         else:                    self.antigens = np.ones(length)
             
         if 'nb_Ag' in kwargs:              self.nb_Ag = kwargs['nb_Ag']
-        elif len(self.antigens) == length: self.nb_Ag = 1
+        elif len(self.antigens) == length: self.nb_Ag = 1   # assuming that the number of antigens in a cocktail is always smaller than the number of residues
         else:                              self.nb_Ag = len(self.antigens)
                       
         if 'Q' in kwargs: self.Q = kwargs['Q']
@@ -121,7 +122,8 @@ class BCell:
     
     def energy(self, Ag):
         """ Return binding energy with input antigen. """            
-        return sum([x*y for x,y in zip(self.res, Ag)])
+        return np.sum(np.multiply(self.res, Ag))
+        #sum([x*y for x,y in zip(self.res, Ag)])
         
     def bind_to(self, Ag):
         """ Return binding energy with input antigen with flexibility. """
@@ -134,7 +136,7 @@ class BCell:
         self.generation += 1
 
     def pick_Antigen(self):
-        """ Return one antigen. """
+        """ Assuming nb_Ag > 1, return one antigen randomly chosen. """
         return self.antigens[np.random.randint(self.nb_Ag)]
         
     def update_antigens(self, newAntigens):
@@ -145,12 +147,13 @@ class BCell:
     def mutate_CDR(self, Ag): ### change parameter of log normal for variable and conserved residues
         """ Change in energy due to affinity-affecting CDR mutation. Only one residue mutates."""
         index = np.random.randint(0, length) #randomly chosen residue to be mutated
+        self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
         
-        if np.random.rand()<p_var*length: #mutation of b cell residue that binds to variable residue
-            self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
-        else: #mutation in conserved-binding residue
-            self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
-            #could add some rules if change affects conserved residue
+        #if np.random.rand()<p_var*length: #mutation of b cell residue that binds to variable residue
+            #self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
+        #else: #mutation in conserved-binding residue
+            #self.res[index] += (o - np.exp(np.random.normal(mu, sigma))) * Ag[index]
+            ##could add some rules if change affects conserved residue
         self.nb_CDR_mut += 1
         self.update_history()        
 
@@ -184,7 +187,9 @@ class BCell:
         self.nb                   += n_silent #add silent mutations to the parent clone
         for i in range(n_affect):
             b = BCell.clone(self)
-            Ag = b.pick_Antigen()
+            if b.nb_Ag > 1: Ag = b.pick_Antigen()
+            else: Ag = b.antigens
+            					
             b.mutate_CDR(Ag)
             new_clones.append(b)
         
@@ -258,8 +263,9 @@ def main(verbose=False):
         # AFFINITY MATURATION
         
         GC_size_max  = np.sum([b.nb for b in B_cells])  # maximum number of cells in the GC (= initial population size)
-        nb_cycle_max = 250                              # maximum number of GC cycles
         cycle_number = 2
+        nb_cycle_max = len(dicAgs)+ cycle_number -1     # maximum number of GC cycles
+        #print('\n cycle_max', nb_cycle_max)
         
         for cycle_number in range(2, nb_cycle_max):
         
@@ -364,7 +370,7 @@ def run_binding_selection(B_cells):
             n_die            = np.random.binomial(b.last_bound[i], langmuir_conj)
             #print('')
             #print(i,b.bind_to(i))
-            #print(b.Ev, b.Ec)
+            #print('\n energy', b.E)
             #print(n_die)
             #print(b.last_bound,b.last_bound[i])
             b.nb            -= n_die
@@ -426,11 +432,11 @@ def run_recycle(B_cells):
         b.nb   -= n_exit
         
         # add remainder to recycled cells
-        if (b.nb>0):
+        if (b.nb > 0):
             new_cells.append(b)
     
         # record exit cells
-        if (n_exit>0):
+        if (n_exit > 0):
             exit_cells.append(deepcopy(b))
             exit_cells[-1].nb = n_exit
 
