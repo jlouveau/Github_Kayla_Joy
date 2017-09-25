@@ -10,7 +10,7 @@ from timeit import default_timer as timer   # timer for performance
 
 
 ###### Global parameters ######
-    
+##Kayla was here!!    
 p_mut        = 0.20                             # probability of mutation per division round
 p_CDR        = 1.00                             # probability of mutation in the CDR region
 p_CDR_lethal = 0.30                             # probability that a CDR mutation is lethal
