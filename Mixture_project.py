@@ -77,7 +77,7 @@ class BCell:
             self.res         = np.array(kwargs['res'])
             self.E         = kwargs['E']       
         else:
-            self.res = -np.random.dirichlet(np.ones(length)) + 1/length + epsilon #sum to >0
+            self.res = -np.random.dirichlet(np.ones(length)) + 1./float(length) + epsilon #sum to >0
             self.E = sum(self.res) #assuming that the initializing Ag equals ones(length)
             if self.E < 0: print('error initialization of E')
         
