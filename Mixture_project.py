@@ -10,7 +10,7 @@ from timeit import default_timer as timer   # timer for performance
 
 
 ###### Global parameters ######
-##Kayla was here!!    
+   
 p_mut        = 0.20                             # probability of mutation per division round
 p_CDR        = 1.00                             # probability of mutation in the CDR region
 p_CDR_lethal = 0.30                             # probability that a CDR mutation is lethal
@@ -421,7 +421,7 @@ def run_recycle(B_cells):
     b_exit     = np.array([])                       # index of cells that will exit the GC
 
     if (n_tot > 0) and (n_exit > 0):
-        b_exit = np.random.choice(n_tot, n_exit)
+        b_exit = np.random.choice(n_tot, n_exit, replace=False)
 
     idx = 0
     for b in B_cells:
