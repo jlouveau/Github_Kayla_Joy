@@ -232,8 +232,11 @@ def main(verbose=False):
     fbig.write('trial,exit cycle,Q,E,generation,FR_mutations,CDR_mutations\n')
     
     # Upload dictionary of antigens
+    import dictionary_little_code
+    reload(dictionary_little_code)
     from dictionary_little_code import dicAgs
     print ('imported dictionary!')
+    print dicAgs
     
     # Events of a trial
     for t in range(nb_trial):
