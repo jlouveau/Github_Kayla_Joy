@@ -3,12 +3,12 @@ import csv
 
 ####### parameters #######
 time_Steps = [2, 61, 121, 181, 241]
-singleAntigenTest = 1
+singleAntigenTest = 0
 
 cocktailFirst = 1
 l = 46 #number of residues, 36 variable, 10 conserved
 
-conccock=1.15
+conccock=1.20
 concseq=1.15
 
 ####### antigens creation ####### 
