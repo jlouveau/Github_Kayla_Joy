@@ -28,13 +28,17 @@ length            = 46
 consLength        = 18
 epsilon           = 1e-16
 testpanelSize     = 100
-breadth_threshold = 17
+breadth_threshold = 19
 alpha             = 2
 nb_GC_founders    = 3
 GC_duration       = 80
 activation_energy = 10.8
 delta_energy      = 0.50
 nb_seeding_cells  = 15
+dx_mutation       = 0.8
+dx_penalty        = 1.2
+h_high            = 1.5
+h_low             = -1
 
 energy_scale = 0.08            # inverse temperature
 E0           = 3.00            # mean binding energy for mixing with flexibility
@@ -108,7 +112,7 @@ class BCell:
         else:             self.E = sum(self.res) #assuming that the initializing Ag equals ones(length)
                         
         if 'antigens' in kwargs: self.antigens = np.array(kwargs['antigens'])
-        else:                    self.antigens = np.ones(length)
+        else:                    self.antigens = np.array([np.ones(length)])
         
         if 'breadth' in kwargs: self.breadth = np.array(kwargs['breadth'])
         else:                   self.breadth = 0
@@ -146,10 +150,10 @@ class BCell:
     def clone(cls, b):
         return cls(1, res = deepcopy(b.res), antigens = deepcopy(b.antigens), nb_Ag = b.nb_Ag, E = b.E, Q = b.Q, generation = b.generation, mut_res_id = b.mut_res_id, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, delta_res = b.delta_res, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
                    
-    def update_history(self,temp_res):
+    def update_history(self):
         """ Add current parameters to the history list. """
         self.history['generation'].append(self.generation)
-        self.history['res'].append(temp_res)
+        self.history['res'].append(self.res)
         self.history['nb_CDR_mut'].append(self.nb_CDR_mut)
         self.history['mut_res_id'].append(self.mut_res_id)
         self.history['E'].append(self.E)      
@@ -185,12 +189,7 @@ class BCell:
     
     def mutate_CDR(self, Ag): ### change parameter of log normal for variable and conserved residues
         """ Change in energy due to affinity-affecting CDR mutation. Only one residue mutates."""
-        temp_res1 = []
-        temp_res2 = []
-        dx_mutation = 0.8
-        dx_penalty  = 1.2
-        h_high      = 1.5
-        h_low       = -1
+        temp_res1 = deepcopy(self.res)
         
         index = np.random.randint(0, length) #randomly chosen residue to be mutated
         self.mut_res_id = index
@@ -199,31 +198,30 @@ class BCell:
         if delta > dx_mutation: delta = dx_mutation
         elif delta < -dx_mutation: delta = -dx_mutation        
         self.delta_res = delta * Ag[index]
-        self.res[index] +=  delta * Ag[index]
-        if self.res[index] > h_high: self.res[index] = h_high
-        elif self.res[index] < h_low: self.res[index] = h_low
+        temp_res1[index] +=  delta * Ag[index]
+        if temp_res1[index] > h_high: temp_res1[index] = h_high
+        elif temp_res1[index] < h_low: temp_res1[index] = h_low
         self.nb_CDR_mut += 1
         self.breadth = self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
         self.E = self.energy(Ag)
-        temp_res1[:] = self.res[:]
-        self.update_history(temp_res1)
+        self.res = deepcopy(temp_res1)
+        self.update_history()
         
         if (index < length-consLength):
+            temp_res2 = deepcopy(self.res)
             indexPenalty = np.random.randint(0, consLength) + (length - consLength)
-        else:
-            indexPenalty = np.random.randint(0, (length - consLength))
-        self.mut_res_id = indexPenalty 
-        deltaPenalty = - alpha * delta
-        if deltaPenalty > dx_penalty: deltaPenalty = dx_penalty
-        elif deltaPenalty < -dx_penalty: deltaPenalty = -dx_penalty    
-        self.res[indexPenalty] +=  deltaPenalty
-        if self.res[indexPenalty] > h_high: self.res[indexPenalty] = h_high
-        elif self.res[indexPenalty] < h_low: self.res[indexPenalty] = h_low
-        self.delta_res = deltaPenalty
-        self.breadth = self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
-        self.E = self.energy(Ag)
-        temp_res2[:] = self.res[:]
-        self.update_history(temp_res2)
+            self.mut_res_id = indexPenalty 
+            deltaPenalty = - alpha * delta
+            if deltaPenalty > dx_penalty: deltaPenalty = dx_penalty
+            elif deltaPenalty < -dx_penalty: deltaPenalty = -dx_penalty    
+            temp_res2[indexPenalty] +=  deltaPenalty
+            if temp_res2[indexPenalty] > h_high: temp_res2[indexPenalty] = h_high
+            elif temp_res2[indexPenalty] < h_low: temp_res2[indexPenalty] = h_low
+            self.delta_res = deltaPenalty
+            self.breadth = self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
+            self.E = self.energy(Ag)
+            self.res = deepcopy(temp_res2)
+            self.update_history()
 
     def mutate_FR(self):
         """ Change in flexibility due to affinity-affecting framework (FR) mutation. """
@@ -257,7 +255,7 @@ class BCell:
         for i in range(n_affect):
             b = BCell.clone(self)
             if b.nb_Ag > 1: Ag = b.pick_Antigen()
-            else: Ag = b.antigens
+            else: Ag = b.antigens[0]
             b.mutate_CDR(Ag)
             new_clones.append(b)
         
@@ -286,7 +284,7 @@ def main(verbose=False):
     
     # Run multiple trials and save all data to file
     
-    nb_trial = 20
+    nb_trial = 5
     start    = timer()
     
     fend = open('output-end.csv', 'w')
@@ -339,12 +337,10 @@ def main(verbose=False):
         
         for cycle_number in range(2, nb_cycle_max):       
              
-            cycleAntigens = dicAgs[cycle_number]
+            cycleAntigens = np.array([dicAgs[cycle_number]])
             nb_Ag = find_nb_Ag(cycleAntigens)
+            #print(cycleAntigens)
             cycleconc = dicconc[cycle_number]
-            
-            if np.shape(cycleAntigens)==1:
-                cycleAntigens = np.reshape(cycleAntigens, (np.product(np.shape(cycleAntigens),))).tolist()
             
             if cyc < GC_duration:
                 # keep same GC
