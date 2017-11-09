@@ -28,10 +28,10 @@ length            = 46
 consLength        = 18
 epsilon           = 1e-16
 testpanelSize     = 100
-breadth_threshold = 19
+breadth_threshold = 20
 alpha             = 2
-nb_GC_founders    = 3
-GC_duration       = 80
+nb_GC_founders    = 10
+GC_duration       = 70
 activation_energy = 10.8
 delta_energy      = 0.50
 nb_seeding_cells  = 15
@@ -331,6 +331,7 @@ def main(verbose=False):
         # AFFINITY MATURATION
         
         GC_size_max  = nb_recycled[-1]  # maximum number of cells in the GC (= initial population size)
+        print('GC_size_max ', GC_size_max)
         cycle_number = 2
         nb_cycle_max = len(dicAgs)+ cycle_number -1     # maximum number of GC cycles
         cyc = 0
@@ -348,8 +349,8 @@ def main(verbose=False):
                 cyc += 1
             elif cyc == GC_duration:
                 # start new GC
-                memory_founders = B_cells
-                #memory_founders = pick_memCells_for_new_GC(memory_cells, nb_GC_founders) 
+                print('number of memory cells ', len(memory_cells))
+                memory_founders = pick_memCells_for_new_GC(memory_cells, nb_GC_founders) 
                 B_cells, out_cells = run_GC_cycle(memory_founders, cycleAntigens, cycleconc, nb_Ag)
                 cyc = 0
             else: 
@@ -361,7 +362,7 @@ def main(verbose=False):
                 out_cells += B_cells
                 nb_exit.append(np.sum([b.nb for b in out_cells]))
             else:
-                memory_cells = out_cells
+                memory_cells += out_cells
                 nb_exit.append(np.sum([b.nb for b in out_cells]))
                 out_cells = []
             
@@ -435,7 +436,6 @@ def updating_antigens(B_cells, cycleAntigens):
     """ The antigens for all B cells are updated with the beginning of a new cycle. """
     for b in B_cells:
         b.update_antigens(cycleAntigens)    
-    #print (B_cells[0].antigens)
     return B_cells
 
 #def calculating_mean_breadths(B_cells, testpanel, treshold, panelSize):
@@ -542,10 +542,10 @@ def run_recycle(B_cells):
     return new_cells, exit_cells
 
 def pick_memCells_for_new_GC(memory_cells, nb_GC_founders):
-    #n_mem_cells = len(memory_cells)
-    #memory_founders = np.random.choice(n_mem_cells, nb_GC_founders, replace=False)
-    #return memory_founders
-    return memory_cells
+    n_mem_cells = len(memory_cells)
+    id_new_founders = np.random.choice(n_mem_cells, nb_GC_founders, replace=False)
+    new_founders = [memory_cells[id_new_founders[i]] for i in range(nb_GC_founders)]
+    return new_founders
 
 def run_breadth_calculation(panel_energies, threshold, panelSize):
     average  = np.mean(panel_energies)

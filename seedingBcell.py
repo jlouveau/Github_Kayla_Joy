@@ -5,8 +5,8 @@ import numpy as np
 
 #parameters
 length            = 46
-nb_seeding_cells  = 15
-N                 = 5000
+nb_seeding_cells  = 200
+N                 = 20000
 activation_energy = 10.8
 delta_energy      = 0.50
 lower_res         = -0.18
