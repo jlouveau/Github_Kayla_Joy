@@ -27,11 +27,11 @@ p_FR_affect  = 1. - p_FR_lethal - p_FR_silent   # probability that a FR mutation
 length            = 46
 consLength        = 18
 epsilon           = 1e-16
-testpanelSize     = 100
+testpanelSize     = 1
 breadth_threshold = 20
 alpha             = 2
-nb_GC_founders    = 10
-GC_duration       = 70
+nb_GC_founders    = 1000
+GC_duration       = 78
 activation_energy = 10.8
 delta_energy      = 0.50
 nb_seeding_cells  = 15
@@ -39,6 +39,7 @@ dx_mutation       = 0.8
 dx_penalty        = 1.2
 h_high            = 1.5
 h_low             = -1
+nb_trial          = 5
 
 energy_scale = 0.08            # inverse temperature
 E0           = 3.00            # mean binding energy for mixing with flexibility
@@ -71,9 +72,12 @@ def create_test_panel(panelSize):
     varLength=length-consLength
     testPanel = {}
     for i in range(panelSize):
+        #testAg = []
+        #for k in range(length-consLength): testAg=np.append(testAg,-1).tolist()
         testAg = (np.random.choice([-1, 1], varLength, p=[0.5, 0.5])).tolist()
         for j in range(consLength): testAg=np.append(testAg,1).tolist()
         testPanel.update({i: testAg})
+        #print(testPanel)
     return testPanel
        
 #Create test panel
@@ -106,8 +110,8 @@ class BCell:
             self.res  = np.array(kwargs['res']) 
         else:
             print('res not recognized as an input argument')    
-            self.res = np.zeros(length)
-        
+            self.res = np.zeros(length) 
+    
         if 'E' in kwargs: self.E = kwargs['E']  
         else:             self.E = sum(self.res) #assuming that the initializing Ag equals ones(length)
                         
@@ -143,14 +147,14 @@ class BCell:
         else:                      self.generation = 0
 
         if 'history' in kwargs: self.history = kwargs['history']
-        else:                   self.history = {'generation' : [self.generation], 'res' : [self.res], 'nb_CDR_mut' : [self.nb_CDR_mut], 'mut_res_id' : [self.mut_res_id], 'E' : [self.E], 'breadth' : [self.breadth], 'delta_res' : [self.delta_res]}
+        else:                   self.history = {'generation' : [self.generation], 'res' : [self.res], 'nb_CDR_mut' : [self.nb_CDR_mut], 'mut_res_id' : [self.mut_res_id], 'E' : [self.E], 'breadth' : [self.breadth], 'delta_res' : [self.delta_res], 'abs_H_frac' : [0], 'cycle_number' : [0]}
 
     """ Return a new copy of the input BCell"""
     @classmethod
     def clone(cls, b):
         return cls(1, res = deepcopy(b.res), antigens = deepcopy(b.antigens), nb_Ag = b.nb_Ag, E = b.E, Q = b.Q, generation = b.generation, mut_res_id = b.mut_res_id, nb_FR_mut = b.nb_FR_mut, nb_CDR_mut = b.nb_CDR_mut, delta_res = b.delta_res, last_bound = deepcopy(b.last_bound), history = deepcopy(b.history))
                    
-    def update_history(self):
+    def update_history(self, cycle_number, abs_H_frac):
         """ Add current parameters to the history list. """
         self.history['generation'].append(self.generation)
         self.history['res'].append(self.res)
@@ -159,6 +163,8 @@ class BCell:
         self.history['E'].append(self.E)      
         self.history['breadth'].append(self.breadth)
         self.history['delta_res'].append(self.delta_res)
+        self.history['abs_H_frac'].append(abs_H_frac)
+        self.history['cycle_number'].append(cycle_number)
     
     def energy(self, Ag):
         """ Return binding energy with input antigen. """            
@@ -187,7 +193,7 @@ class BCell:
         if np.shape(newAntigens)[0] == length: self.nb_Ag = 1
         else:                                  self.nb_Ag = np.shape(newAntigens)[0]
     
-    def mutate_CDR(self, Ag): ### change parameter of log normal for variable and conserved residues
+    def mutate_CDR(self, Ag, cycle_number): ### change parameter of log normal for variable and conserved residues
         """ Change in energy due to affinity-affecting CDR mutation. Only one residue mutates."""
         temp_res1 = deepcopy(self.res)
         
@@ -205,7 +211,8 @@ class BCell:
         self.breadth = self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
         self.E = self.energy(Ag)
         self.res = deepcopy(temp_res1)
-        self.update_history()
+        abs_H_frac = (sum(abs(self.res[i]) for i in range(length - consLength, length))/consLength) / (sum(abs(self.res[i]) for i in range(length - consLength))/(length-consLength))        
+        self.update_history(cycle_number, abs_H_frac)
         
         if (index < length-consLength):
             temp_res2 = deepcopy(self.res)
@@ -221,7 +228,8 @@ class BCell:
             self.breadth = self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
             self.E = self.energy(Ag)
             self.res = deepcopy(temp_res2)
-            self.update_history()
+            abs_H_frac = (sum(abs(self.res[i]) for i in range(length - consLength, length))/consLength) / (sum(abs(self.res[i]) for i in range(length - consLength))/(length-consLength))
+            self.update_history(cycle_number, abs_H_frac)
 
     def mutate_FR(self):
         """ Change in flexibility due to affinity-affecting framework (FR) mutation. """
@@ -237,7 +245,7 @@ class BCell:
         self.calculate_breadth(testpanel, breadth_threshold,testpanelSize)
         self.update_history()       
 
-    def shm(self):
+    def shm(self,cycle_number):
         """ Run somatic hypermutation and return self + new B cell clones. """
         
         # get number of cells that mutate, remove from the clone
@@ -256,7 +264,7 @@ class BCell:
             b = BCell.clone(self)
             if b.nb_Ag > 1: Ag = b.pick_Antigen()
             else: Ag = b.antigens[0]
-            b.mutate_CDR(Ag)
+            b.mutate_CDR(Ag, cycle_number)
             new_clones.append(b)
         
         # process FR mutations
@@ -283,18 +291,18 @@ def main(verbose=False):
     """ Simulate the affinity maturation process in a single germinal center (GC) and save the results to a CSV file. """
     
     # Run multiple trials and save all data to file
-    
-    nb_trial = 5
+        
     start    = timer()
     
-    fend = open('output-end.csv', 'w')
-    ftot = open('output-total.csv',  'w')
-    fbig = open('output-largest-clone.csv', 'w')
+    fend  = open('output-end.csv', 'w')
+    ftot  = open('output-total.csv',  'w')
+    fbig  = open('output-largest-clone.csv', 'w')
+    fsurv = open('output-surv.csv','w')
     
     fend.write('trial,exit_cycle,number,generation,CDR_mutations,E,breadth,res0,res1,res2,res3,res4,res5,res6,res7,res8,res9,res10,res11,res12,res13,res14,res15,res16,res17,res18,res19,res20,res21,res22,res23,res24,res25,res26,res27,res28,res29,res30,res31,res32,res33,res34,res35,res36,res37,res38,res39,res40,res41,res42,res43,res44,res45\n')
     ftot.write('trial,cycle,number recycled,number exit,mean E,mean breadth,mean nb CDR mut\n')
-    fbig.write('trial,update,generation,CDR_mutations,E,breadth,delta_res,mut_res_index,res0,res1,res2,res3,res4,res5,res6,res7,res8,res9,res10,res11,res12,res13,res14,res15,res16,res17,res18,res19,res20,res21,res22,res23,res24,res25,res26,res27,res28,res29,res30,res31,res32,res33,res34,res35,res36,res37,res38,res39,res40,res41,res42,res43,res44,res45\n')
-    
+    fbig.write('trial,cycle,update,generation,CDR_mutations,E,abs_H_frac,breadth,delta_res,mut_res_index,res0,res1,res2,res3,res4,res5,res6,res7,res8,res9,res10,res11,res12,res13,res14,res15,res16,res17,res18,res19,res20,res21,res22,res23,res24,res25,res26,res27,res28,res29,res30,res31,res32,res33,res34,res35,res36,res37,res38,res39,res40,res41,res42,res43,res44,res45\n')
+    fsurv.write('trial,cycle,survival rate\n')
 
     # Events of a trial
     for t in range(nb_trial):
@@ -303,12 +311,13 @@ def main(verbose=False):
 
         # INITIALIZATION - DEFINE DATA STRUCTURES
 
-        recycled_cells  = []
-        exit_cells      = [] # cells at the end of the simulation
-        memory_cells    = [] # exit cells from previous cycle 
-        nb_recycled     = []
-        nb_exit         = []
-        memory_founders = []
+        recycled_cells   = []
+        exit_cells       = [] # cells at the end of the simulation
+        memory_cells     = [] # exit cells from previous cycle 
+        nb_recycled      = []
+        nb_exit          = []
+        memory_founders  = []
+        GC_survival_rate = [] # nb of B cells after selection / nb of B cells after dark zone 
 
         # CYCLES 1 + 2 - CREATE FOUNDERS AND REPLICATE WITHOUT MUTATION
         
@@ -323,6 +332,7 @@ def main(verbose=False):
         nb_exit.append(0)                                   # no founders exit the GC
         recycled_cells.append([deepcopy(b) for b in B_cells]) # add all cells of all 3 clones
         
+        
         #cycle 1
         nb_recycled.append(np.sum([b.nb for b in B_cells])) # all founders replicate and are recycled
         recycled_cells.append([deepcopy(b) for b in B_cells]) # add all cells of all 3 clones
@@ -331,7 +341,6 @@ def main(verbose=False):
         # AFFINITY MATURATION
         
         GC_size_max  = nb_recycled[-1]  # maximum number of cells in the GC (= initial population size)
-        print('GC_size_max ', GC_size_max)
         cycle_number = 2
         nb_cycle_max = len(dicAgs)+ cycle_number -1     # maximum number of GC cycles
         cyc = 0
@@ -345,13 +354,14 @@ def main(verbose=False):
             
             if cyc < GC_duration:
                 # keep same GC
-                B_cells, out_cells = run_GC_cycle(B_cells, cycleAntigens, cycleconc, nb_Ag)
+                B_cells, out_cells, GC_surv_fraction = run_GC_cycle(B_cells, cycleAntigens, cycleconc, nb_Ag, cycle_number)
+                GC_survival_rate.append(GC_surv_fraction)
                 cyc += 1
             elif cyc == GC_duration:
                 # start new GC
-                print('number of memory cells ', len(memory_cells))
                 memory_founders = pick_memCells_for_new_GC(memory_cells, nb_GC_founders) 
-                B_cells, out_cells = run_GC_cycle(memory_founders, cycleAntigens, cycleconc, nb_Ag)
+                B_cells, out_cells, GC_surv_fraction = run_GC_cycle(memory_founders, cycleAntigens, cycleconc, nb_Ag, cycle_number)
+                GC_survival_rate.append(GC_surv_fraction)
                 cyc = 0
             else: 
                 print('error in starting a GC')                 
@@ -379,6 +389,11 @@ def main(verbose=False):
                     fend.write('\n')
         fend.flush()
         
+        for i in range(len(GC_survival_rate)):
+            fsurv.write('%d,%d,%lf' % (t, i+2,GC_survival_rate[i]))
+            fsurv.write('\n')
+        fsurv.flush()
+
         for i in range(len(recycled_cells)):    
             meanE = 0
             meanBreadth = 0
@@ -396,7 +411,7 @@ def main(verbose=False):
 
             ftot.write('%d,%d,%d,%d,%lf,%lf,%lf\n' % (t, i, nb_recycled[i],nb_exit[i], meanE, meanBreadth, meanCDRMutations))
         ftot.flush()
-        
+            
         if len(exit_cells[-1])>0:
             idx = np.argmax([b.nb for b in exit_cells[-1]])
             b   = exit_cells[-1][idx]
@@ -405,7 +420,7 @@ def main(verbose=False):
                 #w.writerows(b.history.items())
              
             for i in range(len(b.history['E'])):
-                fbig.write('%d,%d,%d,%d,%lf,%lf,%lf,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n' % (t, i, b.history['generation'][i], b.history['nb_CDR_mut'][i], b.history['E'][i], b.history['breadth'][i], b.history['delta_res'][i], b.history['mut_res_id'][i], b.history['res'][i][0], b.history['res'][i][1], b.history['res'][i][2], b.history['res'][i][3], b.history['res'][i][4], b.history['res'][i][5], b.history['res'][i][6], b.history['res'][i][7], b.history['res'][i][8], b.history['res'][i][9], b.history['res'][i][10], b.history['res'][i][11], b.history['res'][i][12], b.history['res'][i][13], b.history['res'][i][14], b.history['res'][i][15], b.history['res'][i][16], b.history['res'][i][17], b.history['res'][i][18], b.history['res'][i][19],b.history['res'][i][20], b.history['res'][i][21], b.history['res'][i][22], b.history['res'][i][23], b.history['res'][i][24], b.history['res'][i][25], b.history['res'][i][26], b.history['res'][i][27], b.history['res'][i][28], b.history['res'][i][29],b.history['res'][i][30], b.history['res'][i][31], b.history['res'][i][32], b.history['res'][i][33], b.history['res'][i][34], b.history['res'][i][35], b.history['res'][i][36], b.history['res'][i][37], b.history['res'][i][38], b.history['res'][i][39],b.history['res'][i][40], b.history['res'][i][41], b.history['res'][i][42], b.history['res'][i][43], b.history['res'][i][44], b.history['res'][i][45]))
+                fbig.write('%d,%d,%d,%d,%d,%lf,%lf,%lf,%lf,%d,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf,%lf\n' % (t, b.history['cycle_number'][i], i, b.history['generation'][i], b.history['nb_CDR_mut'][i], b.history['E'][i], b.history['abs_H_frac'][i], b.history['breadth'][i], b.history['delta_res'][i], b.history['mut_res_id'][i], b.history['res'][i][0], b.history['res'][i][1], b.history['res'][i][2], b.history['res'][i][3], b.history['res'][i][4], b.history['res'][i][5], b.history['res'][i][6], b.history['res'][i][7], b.history['res'][i][8], b.history['res'][i][9], b.history['res'][i][10], b.history['res'][i][11], b.history['res'][i][12], b.history['res'][i][13], b.history['res'][i][14], b.history['res'][i][15], b.history['res'][i][16], b.history['res'][i][17], b.history['res'][i][18], b.history['res'][i][19],b.history['res'][i][20], b.history['res'][i][21], b.history['res'][i][22], b.history['res'][i][23], b.history['res'][i][24], b.history['res'][i][25], b.history['res'][i][26], b.history['res'][i][27], b.history['res'][i][28], b.history['res'][i][29],b.history['res'][i][30], b.history['res'][i][31], b.history['res'][i][32], b.history['res'][i][33], b.history['res'][i][34], b.history['res'][i][35], b.history['res'][i][36], b.history['res'][i][37], b.history['res'][i][38], b.history['res'][i][39],b.history['res'][i][40], b.history['res'][i][41], b.history['res'][i][42], b.history['res'][i][43], b.history['res'][i][44], b.history['res'][i][45]))
         fbig.flush()
         
     # End and output total time
@@ -413,6 +428,7 @@ def main(verbose=False):
     fend.close()
     ftot.close()
     fbig.close()
+    fsurv.close()
     
     end = timer()
     print('\nTotal time: %lfs, average per cycle %lfs' % ((end - start),(end - start)/float(nb_trial)))
@@ -443,14 +459,14 @@ def updating_antigens(B_cells, cycleAntigens):
         #b.calculate_breadth(testpanel, treshold, panelSize)
     #return B_cells
     
-def run_dark_zone(B_cells, nb_rounds = 2):
+def run_dark_zone(B_cells, cycle_number, nb_rounds = 2):
     """ B cells proliferate and undergo SHM in the dark zone. """
     
     for i in range(nb_rounds):
         new_cells = []
         for b in B_cells:
             b.divide()
-            new_cells += b.shm()
+            new_cells += b.shm(cycle_number)
         B_cells = new_cells
     return B_cells
 
@@ -508,6 +524,8 @@ def run_help_selection(B_cells, nb_Ag):
                         B_cells[i].nb            -= n_die_tie
                         B_cells[i].last_bound[j] -= n_die_tie
                         n_die_tie                 = 0
+    cells_surv = np.sum([b.nb for b in B_cells])   
+    return B_cells, cells_surv
 
 
 def run_recycle(B_cells):
@@ -553,14 +571,16 @@ def run_breadth_calculation(panel_energies, threshold, panelSize):
     breadth  = float(sum(x > threshold for x in panel_energies))/panelSize 
     return average, variance, breadth
 
-def run_GC_cycle(B_cells, cycleAntigens, cycleconc, nb_Ag):
+def run_GC_cycle(B_cells, cycleAntigens, cycleconc, nb_Ag, cycle_number):
     """ Run one cycle of the GC reaction. """
-    B_cells = updating_antigens(B_cells, cycleAntigens) # UPDATE antigens
-    B_cells = run_dark_zone(B_cells)    # DARK  ZONE - two rounds of division + SHM
-    B_cells = run_binding_selection(B_cells, cycleconc, nb_Ag)      # LIGHT ZONE - selection for binding to Ag
-    run_help_selection(B_cells, nb_Ag)         # LIGHT ZONE - selection to receive T cell help
-    #B_cells = updating_breadths(B_cells, testpanel, breadth_threshold, testpanelSize)
-    return run_recycle(B_cells)         # RECYCLE    - randomly pick exiting cells from the surviving B cells
+    B_cells = updating_antigens(B_cells, cycleAntigens)         # UPDATE antigens
+    B_cells = run_dark_zone(B_cells, cycle_number)                            # DARK  ZONE - two rounds of division + SHM
+    total_cells = np.sum([b.nb for b in B_cells])
+    B_cells = run_binding_selection(B_cells, cycleconc, nb_Ag)  # LIGHT ZONE - selection for binding to Ag
+    B_cells, cells_surv = run_help_selection(B_cells, nb_Ag)    # LIGHT ZONE - selection to receive T cell help
+    GC_surv_fraction = float(cells_surv/total_cells)
+    B_cells, exit_cells = run_recycle(B_cells)
+    return B_cells, exit_cells, GC_surv_fraction               # RECYCLE    - randomly pick exiting cells from the surviving B cells
 
 
 
